@@ -1,0 +1,13 @@
+---
+# Inventario de las máquinas que administra Ansible.
+# El usuario SSH está en ansible.cfg (remote_user), así que no se repite aquí.
+all:
+  hosts:
+    # Servidor DNS (BIND9)
+    dns:
+      ansible_host: 192.168.57.5
+      ansible_ssh_private_key_file: ./private_keys/dns.key.rsa
+    # Servidor web (Apache) y FTP (vsftpd)
+    negocio:
+      ansible_host: 192.168.57.7
+      ansible_ssh_private_key_file: ./private_keys/negocio.key.rsa
