@@ -26,7 +26,7 @@ chmod 600 ./private_keys/*
 # hacer `vagrant provision ansible`
 # cp -vf /vagrant/ansible.cfg .
 # cp -vf /vagrant/inventory.yml .
-# cp -vf /vagrant/requirements.yml .
+cp -vf /vagrant/requirements.yml .
 # cp -vrf /vagrant/dns .
 # cp -vrf /vagrant/web .
 # cp -vrf /vagrant/ftp .
@@ -38,7 +38,7 @@ chmod 600 ./private_keys/*
 # chmod 600 ./.vault_pass.txt
 
 # Instalar dependencias de Ansible
-# ansible-galaxy collection install -r requirements.yml
+ansible-galaxy collection install -r requirements.yml
 
 # Provisionar con Ansible
 # ansible-playbook dns/dns.yml
