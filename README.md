@@ -28,3 +28,50 @@ Las tareas las organizo con issues y un tablero en GitHub Projects.
 - **vsftpd**: el servidor FTP.
 - **FileZilla**: cliente FTP para hacer las pruebas.
 - **Git y GitHub**: guardan los cambios y el historial. Con las issues y GitHub Projects organizo las tareas.
+
+## 3. Cómo ejecutar el proyecto
+
+Para poner en marcha el proyecto hay que tener Vagrant y VirtualBox instalados.
+
+Primero se clona el repositorio y se entra en la carpeta del proyecto:
+
+```bash
+git clone https://github.com/B-V-C/ftp-vagrant-ansible.git
+cd ftp-vagrant-ansible
+```
+
+Después se ejecuta:
+
+```bash
+vagrant up
+```
+
+Vagrant crea las tres máquinas. En la máquina `ansible` ejecuta además el script `script/ansible.sh`, que instala Ansible y la deja preparada para configurar las otras dos.
+
+Para ver el estado de las máquinas:
+
+```bash
+vagrant status
+```
+
+Para entrar en el nodo de control:
+
+```bash
+vagrant ssh ansible
+```
+
+Para detener las máquinas:
+
+```bash
+vagrant halt
+```
+
+Para eliminarlas:
+
+```bash
+vagrant destroy -f
+```
+
+## 4. Licencia
+
+Este proyecto está bajo la licencia GNU General Public License v3.0. La elegí porque es la misma que usa Ansible y porque obliga a que las versiones modificadas sigan siendo libres.
