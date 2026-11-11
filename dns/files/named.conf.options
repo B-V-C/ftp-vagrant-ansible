@@ -1,0 +1,22 @@
+// Equipos de confianza: el propio servidor y la red privada
+acl confiables {
+    127.0.0.1;
+    192.168.57.0/24;
+};
+
+options {
+    directory "/var/cache/bind";
+
+    // No se permite copiar las zonas a otros servidores
+    allow-transfer { none; };
+
+    // Escucha solo por IPv4, en localhost y en la IP de la red privada
+    listen-on port 53 { 127.0.0.1; 192.168.57.5; };
+    listen-on-v6 { none; };
+
+    // Recursión solo para los equipos de confianza
+    recursion yes;
+    allow-recursion { confiables; };
+
+    dnssec-validation auto;
+};
