@@ -1,0 +1,32 @@
+---
+- name: Provisionar el servidor web
+  hosts: negocio
+  become: true
+
+  tasks:
+    - name: Instalar Apache
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+        update_cache: true
+
+    - name: Publicar la página de prueba
+      ansible.builtin.copy:
+        src: files/index.html
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reiniciar Apache
+
+    - name: Habilitar e iniciar Apache
+      ansible.builtin.service:
+        name: apache2
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Reiniciar Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted
