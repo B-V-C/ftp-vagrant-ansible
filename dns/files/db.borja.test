@@ -1,0 +1,16 @@
+;
+; Zona directa borja.test
+;
+$TTL 86400
+@   IN SOA dns.borja.test. admin.borja.test. (
+        2026111301 ; Serial
+        3600       ; Refresh
+        1800       ; Retry
+        604800     ; Expire
+        86400 )    ; Negative Cache TTL
+;
+@        IN NS     dns.borja.test.
+dns      IN A      192.168.57.5
+negocio  IN A      192.168.57.7
+www      IN CNAME  negocio.borja.test.
+ftp      IN CNAME  negocio.borja.test.
