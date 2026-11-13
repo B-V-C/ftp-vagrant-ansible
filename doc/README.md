@@ -274,3 +274,225 @@ ansible all -b -a "uptime"
 ![uptime con Ansible](img/07-ansible-uptime.png)
 
 `-a` ejecuta un comando con el módulo `command`, y `-b` (_become_) lo hace con `sudo`. Las dos dan `rc=0`, así que el usuario `vagrant` puede usar `sudo`. Sale `CHANGED` porque con `command` Ansible no sabe si el comando ha cambiado algo, así que siempre lo marca como cambiado.
+
+## 7. Servidor DNS
+
+El DNS es el mismo tipo de servidor que monté en la práctica anterior con BIND9, pero esta vez no lo configuro a mano: escribo los ficheros en el repositorio y un playbook de Ansible los copia y lo deja funcionando.
+
+Todo va en la carpeta `dns/`:
+
+```text
+dns/
+├── dns.yml
+├── test-dns.sh
+└── files/
+    ├── named.conf.options
+    ├── named.conf.local
+    ├── db.borja.test
+    └── db.192.168.57
+```
+
+### 7.1. Ficheros de BIND
+
+Cada fichero lo creé y lo subí con su propio commit.
+
+**`named.conf.options`**:
+
+```text
+acl confiables {
+    127.0.0.1;
+    192.168.57.0/24;
+};
+
+options {
+    directory "/var/cache/bind";
+    allow-transfer { none; };
+    listen-on port 53 { 127.0.0.1; 192.168.57.5; };
+    listen-on-v6 { none; };
+    recursion yes;
+    allow-recursion { confiables; };
+    dnssec-validation auto;
+};
+```
+
+Es casi igual que el de la práctica anterior, con la red `57` en vez de la `56`. La recursión solo se permite al propio servidor y a la red privada, como pide el enunciado. Hay dos cambios:
+
+- En la práctica anterior limitaba BIND a IPv4 con `-4` en `/etc/default/named`. Aquí lo hago con `listen-on-v6 { none; }` en las opciones y así no hace falta copiar otro fichero.
+- Uso `dnssec-validation auto`, que es el valor que trae Debian: BIND valida DNSSEC con la clave de la raíz que trae incluida.
+
+**`named.conf.local`** declara las dos zonas. Las rutas son las de `/var/lib/bind/`, que es donde el playbook copia las zonas:
+
+```text
+zone "borja.test" {
+    type master;
+    file "/var/lib/bind/db.borja.test";
+};
+
+zone "57.168.192.in-addr.arpa" {
+    type master;
+    file "/var/lib/bind/db.192.168.57";
+};
+```
+
+**`db.borja.test`**, la zona directa:
+
+```text
+$TTL 86400
+@   IN SOA dns.borja.test. admin.borja.test. (
+        2026111301 ; Serial
+        3600       ; Refresh
+        1800       ; Retry
+        604800     ; Expire
+        86400 )    ; Negative Cache TTL
+;
+@        IN NS     dns.borja.test.
+dns      IN A      192.168.57.5
+negocio  IN A      192.168.57.7
+www      IN CNAME  negocio.borja.test.
+ftp      IN CNAME  negocio.borja.test.
+```
+
+`www` y `ftp` son alias de `negocio`: así el navegador va a `www.borja.test`, FileZilla a `ftp.borja.test`, y los dos acaban en la misma máquina.
+
+**`db.192.168.57`**, la zona inversa, con un PTR por cada máquina. El número es el último octeto de la IP:
+
+```text
+@   IN NS   dns.borja.test.
+5   IN PTR  dns.borja.test.
+7   IN PTR  negocio.borja.test.
+```
+
+`www` y `ftp` no tienen PTR porque son alias: la IP `.7` apunta al nombre real de la máquina, `negocio.borja.test`.
+
+Los dos ficheros de zona terminan con un salto de línea. En la práctica anterior `named-checkzone` me avisaba de `file does not end with newline`, así que esta vez lo puse desde el principio.
+
+### 7.2. Playbook `dns/dns.yml`
+
+Es el del enunciado con `equipo` cambiado por `borja`. Lo único que añadí es el paquete `bind9-dnsutils`, que trae `dig` y `nslookup` para el script de pruebas.
+
+Qué hace:
+
+1. Instala `bind9` y `bind9-dnsutils` con el módulo `apt`.
+2. Copia `named.conf.options` y `named.conf.local` a `/etc/bind/`.
+3. Copia las dos zonas a `/var/lib/bind/` con dueño `bind`, para que BIND las pueda leer. Lo hace con una sola tarea y un `loop` que recorre los dos ficheros.
+4. Comprueba la configuración con `named-checkconf` y cada zona con `named-checkzone`, los mismos comandos que usé a mano en la práctica anterior. Si hay un error, el playbook se para antes de reiniciar BIND.
+5. Deja BIND habilitado y arrancado.
+
+Las tareas que copian ficheros tienen `notify: Reiniciar BIND`. Si alguna cambia algo, avisa al _handler_, que reinicia BIND una sola vez al final. Las tareas de comprobación llevan `changed_when: false` porque no cambian nada; sin eso Ansible las marcaría siempre como `changed`, igual que pasó con `uptime`.
+
+Para que se ejecute, descomenté en `script/ansible.sh` la línea que copia la carpeta `dns` y la que lanza `ansible-playbook dns/dns.yml`. La línea `chown -R vagrant:vagrant ./{dns,web,ftp}` la dejé comentada, porque `web` y `ftp` todavía no existen y, con `set -e`, el script se pararía.
+
+### 7.3. Problema: la fecha de las máquinas
+
+Al día siguiente, `vagrant status` me decía que las máquinas estaban en `saved`. Las arranqué con `vagrant up` y lancé `vagrant provision ansible`, pero falló el `apt-get update`:
+
+![Error de apt por la fecha](img/08-error-fecha-apt.png)
+
+`apt` decía que los ficheros de Debian "todavía no eran válidos" (`is not valid yet`). Miré la fecha de la máquina:
+
+```bash
+vagrant ssh ansible -c "date"
+```
+
+![Fecha antes de reiniciar](img/09-fecha-antes.png)
+
+Tenía la fecha del día que dejé de trabajar. El estado `saved` es como suspender el ordenador: VirtualBox guarda la máquina tal cual y el reloj se queda congelado. Al despertarla seguía con esa hora, y para ella los ficheros de Debian venían "del futuro". Como el script tiene `set -e`, en cuanto falló `apt-get update` se paró.
+
+Lo arreglé reiniciando las tres máquinas, que al arrancar cogen la hora del ordenador:
+
+```bash
+vagrant reload
+```
+
+![Fecha después de reiniciar](img/10-fecha-despues.png)
+
+Ahora, antes de apagar el ordenador, apago las máquinas con `vagrant halt` para que no se queden en `saved`.
+
+### 7.4. Ejecución del playbook
+
+```bash
+vagrant provision ansible
+```
+
+![Ejecución del playbook del DNS](img/11-playbook-dns.png)
+
+El resumen da `ok=10 changed=5 failed=0`. Las 5 tareas `changed` son la instalación, las tres copias de ficheros y el reinicio. Las comprobaciones salen `ok` gracias al `changed_when: false`. El _handler_ `Reiniciar BIND` se ejecuta una sola vez al final, aunque lo avisaron tres tareas.
+
+Para comprobar que Ansible analiza el playbook sin errores, dentro de la máquina `ansible`:
+
+```bash
+ansible-playbook dns/dns.yml --syntax-check
+```
+
+```bash
+ansible-lint dns/dns.yml
+```
+
+![Comprobación del playbook](img/12-lint-dns.png)
+
+`--syntax-check` solo comprueba que el YAML y la estructura son correctos, sin ejecutar nada. `ansible-lint` revisa además buenas prácticas, y pasa con el perfil `production`, que es el más estricto, con 0 fallos y 0 avisos.
+
+Commits: uno para el playbook y otro para el cambio en `ansible.sh`.
+
+### 7.5. Script de pruebas `dns/test-dns.sh`
+
+El script pregunta a `192.168.57.5` con `dig ... +short` y compara cada respuesta con la que espera:
+
+- Registros A: `dns` y `negocio`.
+- CNAME: `www` y `ftp`, que tienen que apuntar a `negocio.borja.test.`.
+- PTR: `192.168.57.5` y `192.168.57.7`.
+
+Si coincide escribe `[OK]` y si no `[FALLO]`. Al final termina con código `0` si todo ha ido bien o con el número de fallos. En la práctica anterior el `test.sh` solo mostraba las respuestas y tenía que revisarlas yo; este las comprueba solo.
+
+Lo ejecuto en la máquina `dns`, que es la que tiene `dig`:
+
+```bash
+vagrant ssh dns -c "bash /vagrant/dns/test-dns.sh"
+```
+
+La primera vez me salió esto:
+
+![Error al lanzar el script](img/13-error-test-dns.png)
+
+Con `ls dns` vi que había llamado al fichero `test.dns.sh`, con punto en vez de guion. Lo renombré a `test-dns.sh`:
+
+![Pruebas del DNS](img/14-test-dns.png)
+
+Las 6 pruebas salen `[OK]`.
+
+Commit: `DNS: añadido script de pruebas de los registros directos e inversos (Closes #18, Closes #19, Closes #20, Closes #21, Closes #22, Closes #23, Closes #24, Closes #17)`. Con el script se comprueban todas las sub-issues del DNS, así que las cerré todas con este commit.
+
+### 7.6. DNS en mi ordenador
+
+Para poder usar `www.borja.test` en el navegador y `ftp.borja.test` en FileZilla, puse mi servidor como DNS de Windows. En **Conexiones de red** (`ncpa.cpl`) → adaptador Wi-Fi → **Propiedades** → **TCP/IPv4**:
+
+- DNS preferido: `192.168.57.5`
+- DNS alternativo: `8.8.8.8`
+
+![DNS en Windows](img/15-dns-windows.png)
+
+El alternativo lo añadí yo, para no quedarme sin Internet cuando las máquinas están apagadas: si el primero no responde, Windows usa el segundo. Antes lo tenía en automático; cuando termine la práctica lo dejaré como estaba.
+
+Lo compruebo desde Windows sin indicar el servidor, para ver que lo usa solo:
+
+```bash
+nslookup www.borja.test
+```
+
+```bash
+nslookup ftp.borja.test
+```
+
+![nslookup desde Windows](img/16-nslookup-windows.png)
+
+Responde `dns.borja.test` (`192.168.57.5`): sale el nombre del servidor porque `nslookup` lo ha sacado de mi zona inversa. `www` y `ftp` aparecen como alias de `negocio.borja.test` con la IP `192.168.57.7`.
+
+También probé un nombre de Internet:
+
+```bash
+nslookup www.google.es
+```
+
+![nslookup de google.es](img/17-nslookup-google.png)
+
+Las dos primeras veces dio `DNS request timed out`. Para un nombre de fuera, mi servidor tiene que ir preguntando desde los servidores raíz y además validar DNSSEC, y la primera vez tardaba más de los 2 segundos que espera `nslookup`. A la tercera ya lo tenía en caché y respondió. Sale `Respuesta no autoritativa` porque mi servidor no es el dueño de `google.es`: lo ha conseguido por recursión. Es lo mismo que la flag `aa` de la práctica anterior.
