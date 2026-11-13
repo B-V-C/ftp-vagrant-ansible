@@ -27,7 +27,7 @@ chmod 600 ./private_keys/*
 cp -vf /vagrant/ansible.cfg .
 cp -vf /vagrant/inventory.yml .
 cp -vf /vagrant/requirements.yml .
-# cp -vrf /vagrant/dns .
+cp -vrf /vagrant/dns .
 # cp -vrf /vagrant/web .
 # cp -vrf /vagrant/ftp .
 chown vagrant:vagrant ./ansible.cfg ./inventory.yml
@@ -41,6 +41,6 @@ chown vagrant:vagrant ./ansible.cfg ./inventory.yml
 ansible-galaxy collection install -r requirements.yml
 
 # Provisionar con Ansible
-# ansible-playbook dns/dns.yml
+ansible-playbook dns/dns.yml
 # ansible-playbook web/web.yml
 # ansible-playbook ftp/ftp.yml --vault-password-file ./.vault_pass.txt
