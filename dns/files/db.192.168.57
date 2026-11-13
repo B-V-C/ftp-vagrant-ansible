@@ -1,0 +1,14 @@
+;
+; Zona inversa 192.168.57.0/24
+;
+$TTL 86400
+@   IN SOA dns.borja.test. admin.borja.test. (
+        2026111301 ; Serial
+        3600       ; Refresh
+        1800       ; Retry
+        604800     ; Expire
+        86400 )    ; Negative Cache TTL
+;
+@   IN NS   dns.borja.test.
+5   IN PTR  dns.borja.test.
+7   IN PTR  negocio.borja.test.
