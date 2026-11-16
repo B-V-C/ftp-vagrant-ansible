@@ -1,0 +1,6 @@
+---
+# Plantilla del vault: el fichero de verdad es vault.yml, cifrado con Ansible Vault.
+# Los valores son marcadores; los hashes reales se generan con: mkpasswd --method=sha-512
+ftp_password_hashes:
+  juan: '$6$HASH_SHA512_COMPLETO_DE_JUAN'
+  ana: '$6$HASH_SHA512_COMPLETO_DE_ANA'
