@@ -1,2 +1,5 @@
 # Carpeta de Vagrant con las máquinas y sus claves privadas
 .vagrant/
+
+# Contraseña de Ansible Vault: no se sube al repositorio
+vault_pass.txt
