@@ -29,13 +29,14 @@ cp -vf /vagrant/inventory.yml .
 cp -vf /vagrant/requirements.yml .
 cp -vrf /vagrant/dns .
 cp -vrf /vagrant/web .
-# cp -vrf /vagrant/ftp .
+cp -vrf /vagrant/ftp .
 chown vagrant:vagrant ./ansible.cfg ./inventory.yml
-# chown -R vagrant:vagrant ./{dns,web,ftp}
+chown -R vagrant:vagrant ./{dns,web,ftp}
 
 # Copiar contraseña del vault
-# cp -vf /vagrant/vault_pass.txt ./.vault_pass.txt
-# chmod 600 ./.vault_pass.txt
+cp -vf /vagrant/vault_pass.txt ./.vault_pass.txt
+chmod 600 ./.vault_pass.txt
+chown vagrant:vagrant ./.vault_pass.txt
 
 # Instalar dependencias de Ansible
 ansible-galaxy collection install -r requirements.yml
