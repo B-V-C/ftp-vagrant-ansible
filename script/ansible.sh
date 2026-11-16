@@ -6,7 +6,7 @@ set -xeu
 
 # Instalar ansible
 apt-get update
-apt-get install -y ansible ansible-lint whois
+apt-get install -y ansible ansible-lint whois curl
 
 #
 # Copia clave privada de Vagrant para conectarse a las MVs
@@ -28,7 +28,7 @@ cp -vf /vagrant/ansible.cfg .
 cp -vf /vagrant/inventory.yml .
 cp -vf /vagrant/requirements.yml .
 cp -vrf /vagrant/dns .
-# cp -vrf /vagrant/web .
+cp -vrf /vagrant/web .
 # cp -vrf /vagrant/ftp .
 chown vagrant:vagrant ./ansible.cfg ./inventory.yml
 # chown -R vagrant:vagrant ./{dns,web,ftp}
@@ -42,5 +42,5 @@ ansible-galaxy collection install -r requirements.yml
 
 # Provisionar con Ansible
 ansible-playbook dns/dns.yml
-# ansible-playbook web/web.yml
+ansible-playbook web/web.yml
 # ansible-playbook ftp/ftp.yml --vault-password-file ./.vault_pass.txt
