@@ -657,3 +657,53 @@ Y en el navegador ya carga la página:
 ![Página web en el navegador](img/27-navegador-web.png)
 
 Chrome oculta por defecto el `http://` y el `www.` de la barra de direcciones; para que se vea la dirección completa marqué **Mostrar siempre URLs completas** con clic derecho en la barra.
+
+## 9. Servidor FTP
+
+El FTP va en `negocio`, junto a Apache. Lo monto con `vsftpd`, con dos usuarios locales (`juan` y `ana`) y conexiones cifradas con TLS.
+
+### 9.1. Contraseñas con Ansible Vault
+
+El módulo `ansible.builtin.user` necesita el **hash** de la contraseña, no la contraseña en claro. Los generé en la máquina `ansible` con `mkpasswd`, que viene en el paquete `whois` que instala el script:
+
+```bash
+mkpasswd --method=sha-512
+```
+
+![Hash de la contraseña con mkpasswd](img/28-mkpasswd.png)
+
+La contraseña se escribe cuando la pide, no como argumento, para que no quede en el historial de la terminal. El hash empieza por `$6$`, que indica SHA-512; lo que va entre el segundo y el tercer `$` es la _salt_, un valor aleatorio, por eso cada vez sale un hash distinto aunque la contraseña sea la misma. Generé uno para `juan` (contraseña `juan`) y otro para `ana` (contraseña `ana`).
+
+Los hashes van en `ftp/vars/vault.yml`, cifrado con Ansible Vault con la contraseña `daw`:
+
+```bash
+EDITOR=nano ansible-vault create /vagrant/ftp/vars/vault.yml
+```
+
+Lo creo en `/vagrant`, que es la carpeta del proyecto, para que aparezca en el repositorio. Uso `nano` porque el editor que abre por defecto es `vi`. La primera vez cerré la terminal sin querer antes de guardar, y al repetirlo me decía `vault.yml exists, please use 'edit' instead`, porque el fichero ya se había creado a medias. Lo borré con `rm` y lo creé otra vez.
+
+```bash
+head -n 3 /vagrant/ftp/vars/vault.yml
+```
+
+```bash
+ansible-vault view /vagrant/ftp/vars/vault.yml
+```
+
+![Vault cifrado y descifrado](img/29-vault.png)
+
+Con `head` se ve el fichero tal como está guardado: la cabecera `$ANSIBLE_VAULT;1.1;AES256` y el contenido cifrado. Con `ansible-vault view` y la contraseña se ven los hashes. `view` lo enseña con `less`, así que para salir hay que pulsar `q`.
+
+El fichero `vault.yml` sí se sube al repositorio, porque está cifrado. Además subí `ftp/vars/vault.yml.example`, sin cifrar y con marcadores en lugar de hashes, para que se vea la estructura.
+
+La contraseña `daw` está en `vault_pass.txt`, en la raíz del proyecto, para que el script la copie a la máquina `ansible` y el playbook pueda leer el vault sin pedirla. Ese fichero está en el `.gitignore` y no se sube. Lo añadí al `.gitignore` antes de crearlo, para no subirlo por error.
+
+En `script/ansible.sh` descomenté la copia de la carpeta `ftp`, el `chown -R` de las tres carpetas (que hasta ahora no podía activar porque faltaban `web` y `ftp`) y la copia de la contraseña a `.vault_pass.txt` con permisos `600`. Le añadí un `chown vagrant:vagrant`, porque si no el fichero es de `root` y, entrando como `vagrant`, no podría usarlo para lanzar el playbook a mano.
+
+```bash
+vagrant ssh ansible -c "ls -l .vault_pass.txt; ansible-vault view ftp/vars/vault.yml --vault-password-file .vault_pass.txt"
+```
+
+![Vault leído con el fichero de contraseña](img/30-vault-pass.png)
+
+El fichero es de `vagrant`, tiene permisos `-rw-------` y ocupa 3 bytes (`daw`). Con `--vault-password-file` el vault se descifra sin escribir la contraseña.
