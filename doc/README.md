@@ -464,7 +464,7 @@ Commit: `DNS: añadido script de pruebas de los registros directos e inversos (C
 
 ### 7.6. DNS en mi ordenador
 
-Para poder usar `www.borja.test` en el navegador y `ftp.borja.test` en FileZilla, puse mi servidor como DNS de Windows. En **Conexiones de red** (`ncpa.cpl`) → adaptador Wi-Fi → **Propiedades** → **TCP/IPv4**:
+Para poder usar `www.borja.test` en el navegador y `ftp.borja.test` en FileZilla, puse mi servidor como DNS de Windows. En **Conexiones de red** (`ncpa.cpl`) → adaptador Ethernet → **Propiedades** → **TCP/IPv4**:
 
 - DNS preferido: `192.168.57.5`
 - DNS alternativo: `8.8.8.8`
@@ -496,3 +496,164 @@ nslookup www.google.es
 ![nslookup de google.es](img/17-nslookup-google.png)
 
 Las dos primeras veces dio `DNS request timed out`. Para un nombre de fuera, mi servidor tiene que ir preguntando desde los servidores raíz y además validar DNSSEC, y la primera vez tardaba más de los 2 segundos que espera `nslookup`. A la tercera ya lo tenía en caché y respondió. Sale `Respuesta no autoritativa` porque mi servidor no es el dueño de `google.es`: lo ha conseguido por recursión. Es lo mismo que la flag `aa` de la práctica anterior.
+
+Más adelante, al probar la web en el navegador, vi que esta configuración no bastaba: `nslookup` funcionaba pero el navegador no. Lo explico en el apartado 8.6.
+
+## 8. Servidor web
+
+El servidor web va en `negocio`, igual que el FTP. Todo está en la carpeta `web/`:
+
+```text
+web/
+├── web.yml
+├── test-web.sh
+└── files/
+    └── index.html
+```
+
+### 8.1. Página y playbook
+
+`files/index.html` es una página sencilla con un texto que luego busca el script de pruebas:
+
+```html
+<h1>Servidor web de borja.test</h1>
+```
+
+El playbook `web.yml` es el del enunciado: instala `apache2`, copia la página a `/var/www/html/` y deja Apache habilitado y arrancado. Si la página cambia, un _handler_ reinicia Apache al final, igual que con BIND.
+
+Al crear `web.yml` hice clic derecho sobre la carpeta y se me creó dentro de `files`. VS Code muestra `web\files` en una sola línea cuando `files` es lo único que hay dentro, y al hacer clic ahí el fichero se crea en `files`. Lo moví con:
+
+```bash
+Move-Item web/files/web.yml web/
+```
+
+Commits: uno para `index.html` y otro para `web.yml`.
+
+### 8.2. Cambios en `ansible.sh`
+
+Descomenté la línea que copia la carpeta `web` y la que lanza `ansible-playbook web/web.yml`.
+
+Para la prueba con `curl` necesitaba ese programa en la máquina `ansible`, pero `which curl` no devolvía nada: la imagen de Debian no lo trae. Lo añadí a la línea de instalación del script:
+
+```bash
+apt-get install -y ansible ansible-lint whois curl
+```
+
+Commit: `ansible.sh: instalar curl, copiar la carpeta web y ejecutar el playbook web`.
+
+### 8.3. Ejecución
+
+```bash
+vagrant provision ansible
+```
+
+Ahora se ejecutan los dos playbooks. El del DNS sale así:
+
+![Playbook del DNS sin cambios](img/18-dns-sin-cambios.png)
+
+Todas las tareas salen en `ok` y el resumen es `changed=0`. Como no había cambiado nada del DNS, Ansible no ha tocado nada y el _handler_ no se ha ejecutado, así que BIND no se ha reiniciado. Es la ventaja frente a un script: se puede ejecutar todas las veces que haga falta y solo cambia lo necesario.
+
+El de la web:
+
+![Playbook de la web](img/19-playbook-web.png)
+
+`ok=5 changed=3 failed=0`: instala Apache, copia la página y lo reinicia con el _handler_.
+
+### 8.4. Comprobaciones del servidor
+
+Dentro de la máquina `ansible`:
+
+```bash
+ansible-playbook web/web.yml --syntax-check
+```
+
+```bash
+ansible-lint web/web.yml
+```
+
+![Comprobación del playbook web](img/20-lint-web.png)
+
+Igual que el del DNS, pasa con el perfil `production` sin fallos ni avisos.
+
+Para ver que Apache está funcionando lo pregunto con Ansible, solo a `negocio`:
+
+```bash
+ansible negocio -b -a "systemctl is-active apache2"
+```
+
+![Apache activo](img/21-apache-activo.png)
+
+Responde `active`.
+
+### 8.5. Script de pruebas `web/test-web.sh`
+
+El script descarga la página con `curl` y comprueba dos cosas:
+
+- Que el código HTTP es `200`. Lo saca con `curl -s -w "\n%{http_code}"`, que añade el código en una última línea.
+- Que la página contiene el texto `Servidor web de borja.test`, con `grep -q`. Así sé que Apache sirve mi página y no la de bienvenida que trae por defecto.
+
+Tiene la misma estructura que `test-dns.sh`: `[OK]` o `[FALLO]` en cada prueba y termina con el número de fallos.
+
+Uso la IP `192.168.57.7` y no `www.borja.test` porque las máquinas virtuales no usan mi servidor DNS, sino el de la red NAT de VirtualBox. El nombre lo pruebo desde el navegador de mi ordenador.
+
+```bash
+vagrant ssh ansible -c "bash /vagrant/web/test-web.sh"
+```
+
+![Prueba de la web con curl](img/22-test-web.png)
+
+Commit: `Web: añadido script de prueba con curl (Closes #26, Closes #27, Closes #28, Closes #25)`.
+
+### 8.6. Problema: el navegador no encontraba `www.borja.test`
+
+Al abrir `http://www.borja.test` en el navegador me salió esto:
+
+![Error en el navegador](img/23-error-navegador.png)
+
+`DNS_PROBE_FINISHED_NXDOMAIN` quiere decir que el nombre no existe. Pero con `nslookup` sí funcionaba (apartado 7.6). Para ver lo mismo que ve el navegador usé `Resolve-DnsName`, que usa el resolvedor de Windows:
+
+```bash
+Resolve-DnsName www.borja.test
+```
+
+![Resolve-DnsName sin resolver](img/24-error-resolve-dnsname.png)
+
+Windows tampoco lo encontraba. La diferencia es que `nslookup` pregunta directamente al primer servidor DNS de la lista, y el resolvedor de Windows no. Con `Get-DnsClientServerAddress` vi los DNS de cada tarjeta, y fui probando:
+
+1. Además del cable (tarjeta `Ethernet`), tenía la Wi-Fi conectada, con el DNS del router (`192.168.1.1`). La desconecté, pero seguía igual.
+2. Quité el `8.8.8.8` del DNS alternativo, y el error cambió: ya no era "no existe" sino "se agotó el tiempo de espera". O sea, el "no existe" lo respondía `8.8.8.8`, y mi servidor no llegaba a contestar.
+3. Con `Resolve-DnsName www.borja.test -Server 192.168.57.5` sí funcionaba.
+
+El problema era desde qué tarjeta salía la pregunta. Había puesto el DNS en la tarjeta `Ethernet`, la de mi red de casa, así que Windows enviaba la pregunta con la IP de esa tarjeta. La red de las máquinas es otra, la de VirtualBox, y la respuesta no volvía por el mismo camino. Con `-Server` o con `nslookup`, Windows busca el camino hasta `192.168.57.5` y sale por la tarjeta de VirtualBox, por eso sí funcionaba.
+
+Busqué qué tarjeta tiene la IP de mi ordenador en esa red:
+
+```bash
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -like "192.168.57.*"
+```
+
+Es `Ethernet 4`, con `192.168.57.1` (las otras dos tarjetas de VirtualBox que tengo son de otras redes). Así que lo dejé así:
+
+- `Ethernet` (el cable) con el DNS en automático, como estaba. Así, si apago las máquinas, sigo teniendo Internet.
+- `Ethernet 4` con DNS `192.168.57.5` y la **métrica** de la interfaz a `1` (en **Opciones avanzadas**, quitando **Métrica automática**). La métrica es la prioridad de la tarjeta: con `1`, Windows pregunta primero a mi servidor.
+- La Wi-Fi también en automático.
+
+La primera vez puse en `Ethernet 4` el DNS `192.168.57.1`, que es la IP de mi ordenador y no la del servidor. Lo vi en `Get-DnsClientServerAddress` y lo corregí:
+
+![DNS en la tarjeta de VirtualBox](img/25-dns-ethernet4.png)
+
+Después de vaciar la caché con `ipconfig /flushdns` (en una terminal de administrador, porque si no da "La operación solicitada requiere elevación"):
+
+```bash
+Resolve-DnsName www.borja.test
+```
+
+![Resolve-DnsName funcionando](img/26-resolve-dnsname-ok.png)
+
+Ahora Windows lo resuelve solo: `www.borja.test` es un CNAME de `negocio.borja.test`, con la IP `192.168.57.7`.
+
+Y en el navegador ya carga la página:
+
+![Página web en el navegador](img/27-navegador-web.png)
+
+Chrome oculta por defecto el `http://` y el `www.` de la barra de direcciones; para que se vea la dirección completa marqué **Mostrar siempre URLs completas** con clic derecho en la barra.
