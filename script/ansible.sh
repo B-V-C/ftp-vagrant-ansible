@@ -24,14 +24,24 @@ chmod 600 ./private_keys/*
 # Copiar ficheros de ansible y playbooks
 # Descomentar las siguientes líneas según vayamos teniendo los ficheros y
 # hacer `vagrant provision ansible`
+
 cp -vf /vagrant/ansible.cfg .
+chown vagrant:vagrant ./ansible.cfg
+
 cp -vf /vagrant/inventory.yml .
+chown vagrant:vagrant ./inventory.yml
+
 cp -vf /vagrant/requirements.yml .
+chown vagrant:vagrant ./requirements.yml
+
 cp -vrf /vagrant/dns .
+chown -R vagrant:vagrant ./dns
+
 cp -vrf /vagrant/web .
+chown -R vagrant:vagrant ./web
+
 cp -vrf /vagrant/ftp .
-chown vagrant:vagrant ./ansible.cfg ./inventory.yml
-chown -R vagrant:vagrant ./{dns,web,ftp}
+chown -R vagrant:vagrant ./ftp
 
 # Copiar contraseña del vault
 cp -vf /vagrant/vault_pass.txt ./.vault_pass.txt
