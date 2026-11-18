@@ -2,6 +2,8 @@
 
 Autor: Borja Valdearenas Cano
 
+Repositorio: <https://github.com/B-V-C/ftp-vagrant-ansible>`
+
 ## 1. Introducción
 
 En esta práctica monto tres máquinas virtuales con Debian 12 (Bookworm) usando Vagrant y VirtualBox, y las configuro con Ansible en vez de hacerlo a mano en cada una.
