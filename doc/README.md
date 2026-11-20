@@ -36,6 +36,8 @@ El `README.md` de la raíz lo hice en tres commits, uno por cada parte, para cer
 2. Herramientas (`Closes #5`).
 3. Cómo ejecutar el proyecto y licencia (`Closes #6, Closes #2`). Con este último cerré también la issue principal.
 
+Más tarde el profesor actualizó el enunciado y la sub-issue de crear el README pasó a pedir también el nombre y la dirección del repositorio. Añadí la línea `Repositorio:` debajo del autor y actualicé la descripción de la issue #3. Como la issue ya estaba cerrada, en el commit puse `(#3)` en vez de `Closes #3`; así el commit aparece enlazado en la issue igualmente.
+
 ## 5. Vagrant
 
 ### 5.1. Fichero `.gitignore`
@@ -66,6 +68,17 @@ Este script prepara la máquina `ansible` como nodo de control. Lo ejecuta Vagra
 Como al principio no existen todos los ficheros, las líneas que los copian están comentadas. Las voy descomentando según los creo. Si no, el script fallaría al intentar copiar algo que no existe, porque empieza con `set -xeu`: `-e` para el script en el primer error, `-u` da error con variables sin definir y `-x` muestra cada comando antes de ejecutarlo.
 
 Commit: `Añadido script/ansible.sh para preparar el nodo de control (Closes #12)`.
+
+En la versión actualizada del enunciado, el script tiene un `chown` debajo de cada `cp`, en vez de dos `chown` al final con todos los ficheros. Así cada línea se puede descomentar por separado; con la versión anterior no podía activar `chown -R vagrant:vagrant ./{dns,web,ftp}` hasta tener las tres carpetas. Lo cambié igual que en el enunciado, pero con una corrección: después de copiar `requirements.yml`, el enunciado vuelve a hacer `chown ./inventory.yml`, y yo puse `chown ./requirements.yml`.
+
+```bash
+cp -vf /vagrant/requirements.yml .
+chown vagrant:vagrant ./requirements.yml
+```
+
+![Copias con su chown](img/34-ansible-sh-chown.png)
+
+Commit: `ansible.sh: un chown por cada fichero copiado, como en la versión actualizada del enunciado`.
 
 ### 5.3. Fichero `requirements.yml`
 
@@ -150,6 +163,46 @@ Cada una tiene su nombre completo y su IP en `eth1`, la tarjeta de la red privad
 
 Commit: `Añadido Vagrantfile con las máquinas dns, negocio y ansible (Closes #8, Closes #9, Closes #10, Closes #11, Closes #7)`.
 
+### 5.6. Problema: las máquinas se quedaban colgadas
+
+Un día, al hacer `vagrant provision ansible`, el playbook del DNS se quedaba parado en `TASK [Instalar BIND]` y no avanzaba. En la máquina `dns` no había ningún proceso de `apt`, y luego tampoco respondía `vagrant ssh ansible -c "hostname"`. Al intentar reiniciarlas con `vagrant reload`, `dns` no respondía al apagado normal, así que las apagué a la fuerza:
+
+```bash
+vagrant halt -f
+```
+
+A la primera me dijo que otro proceso de Vagrant tenía bloqueada la máquina (`another process is already executing an action on the machine`). Era el `vagrant provision` que había cancelado, que seguía por detrás. Lo cerré desde el Administrador de tareas finalizando los procesos `ruby.exe`, que son los de Vagrant, y ya se apagaron.
+
+Después reinicié Windows, y al hacer `vagrant up` me salió esto:
+
+![Error de VirtualBox al arrancar](img/31-error-vboxmanage.png)
+
+La máquina estaba en estado `saved` (se había guardado al reiniciar con ella encendida) y VirtualBox no podía continuarla: `VERR_CPUM_INCOMPATIBLE_XSAVE_COMP_MASK` quiere decir que el procesador no tenía la misma configuración que cuando se guardó. `vagrant status` daba `aborted-saved` en `dns` y `saved` en las otras dos. En VirtualBox, con clic derecho en cada máquina → **Descartar estado guardado**, las dejé en `poweroff` y ya arrancaron. No se pierde nada: lo descartado es lo que había en la memoria, no el disco.
+
+Al volver a provisionar, en `Instalar BIND` salió esto:
+
+![El proceso de apt muerto](img/32-error-killed.png)
+
+`Killed` quiere decir que Linux había matado el proceso. Miré la memoria de `dns` con `free -m`: no tenía _swap_, y cuando una máquina se queda sin RAM, Linux mata el proceso que más gasta. Con BIND funcionando y el `apt update`, la memoria por defecto ya no llegaba. Por eso se quedaba todo colgado.
+
+En el `Vagrantfile` les di 1 GB a las tres máquinas. Al estar fuera de los `define`, vale para todas:
+
+```ruby
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 1024
+  end
+```
+
+![Memoria de dns con 1 GB](img/33-memoria-dns.png)
+
+Ahora `total` es `960` (1 GB menos lo que reserva el sistema). Con esto la provisión terminó sin errores:
+
+![Provisión correcta](img/35-provision-ok.png)
+
+Por último pasé `test-dns.sh` y las 6 pruebas seguían en `[OK]`.
+
+Commit: `Vagrantfile: 1024 MB de RAM para las máquinas, con la memoria por defecto apt se quedaba sin RAM`.
+
 ## 6. Ansible
 
 Vagrant crea las máquinas y Ansible configura lo que va dentro. Con un script de Vagrant también se podría instalar todo, pero el script ejecuta los comandos uno detrás de otro y tiene que controlar él solo qué pasa si se ejecuta dos veces. Con Ansible las tareas se escriben en playbooks que dicen cómo tiene que quedar la máquina, y si algo ya está como debe, no lo vuelve a hacer.
@@ -161,6 +214,8 @@ Para saber con qué usuario y con qué clave entra Vagrant en cada máquina, eje
 ```bash
 vagrant ssh-config
 ```
+
+![Configuración SSH de las máquinas](img/36-ssh-config.png)
 
 En los tres bloques el usuario es `vagrant` (`User vagrant`) y cada máquina tiene su propia clave privada (`IdentityFile`), dentro de `.vagrant/machines/<máquina>/virtualbox/private_key`.
 
@@ -254,6 +309,20 @@ ansible-inventory --graph
 ![Inventario de Ansible](img/05-inventory-graph.png)
 
 Salen `dns` y `negocio` dentro de `@all`, en `@ungrouped` porque no están en ningún grupo propio. No he puesto `-i inventory.yml` y lo ha encontrado igual, así que también está leyendo el `ansible.cfg`.
+
+Para comprobarlo del todo, ejecuté también el comando tal cual viene en el enunciado, con `-i`, y el mismo sin él:
+
+```bash
+ansible-inventory -i inventory.yml --graph
+```
+
+```bash
+ansible-inventory --graph
+```
+
+![Inventario con y sin -i](img/37-inventory-con-sin-i.png)
+
+Los dos dan lo mismo, porque `inventory = inventory.yml` en `ansible.cfg` hace de `-i` por defecto.
 
 Conexión con las dos máquinas:
 
@@ -432,6 +501,16 @@ ansible-lint dns/dns.yml
 
 `--syntax-check` solo comprueba que el YAML y la estructura son correctos, sin ejecutar nada. `ansible-lint` revisa además buenas prácticas, y pasa con el perfil `production`, que es el más estricto, con 0 fallos y 0 avisos.
 
+El playbook también se puede lanzar a mano desde el nodo de control, como viene en el enunciado. Dentro de la máquina `ansible`:
+
+```bash
+ansible-playbook -i inventory.yml dns/dns.yml
+```
+
+![Playbook del DNS lanzado a mano](img/38-playbook-dns-manual.png)
+
+Sale `changed=0`, porque el DNS ya estaba configurado. Es lo mismo que hace el script con `vagrant provision`, pero lanzado por mí desde `ansible`.
+
 Commits: uno para el playbook y otro para el cambio en `ansible.sh`.
 
 ### 7.5. Script de pruebas `dns/test-dns.sh`
@@ -558,6 +637,16 @@ El de la web:
 ![Playbook de la web](img/19-playbook-web.png)
 
 `ok=5 changed=3 failed=0`: instala Apache, copia la página y lo reinicia con el _handler_.
+
+Igual que con el DNS, lo lancé también a mano desde la máquina `ansible`:
+
+```bash
+ansible-playbook -i inventory.yml web/web.yml
+```
+
+![Playbook de la web lanzado a mano](img/39-playbook-web-manual.png)
+
+Como ya estaba todo hecho, sale `changed=0`.
 
 ### 8.4. Comprobaciones del servidor
 
