@@ -1,6 +1,11 @@
 Vagrant.configure("2") do |config|
   config.vm.box = "debian/bookworm64"
 
+    # Más memoria para las máquinas: con la de por defecto, apt se quedaba sin RAM y el sistema lo mataba
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 1024
+  end
+
   config.vm.define "dns" do |dns|
     dns.vm.hostname = "dns.borja.test"
     dns.vm.network "private_network", ip: "192.168.57.5"
