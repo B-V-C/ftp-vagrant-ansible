@@ -1025,3 +1025,64 @@ Con un usuario que no existe (`pepe`):
 ![Usuario no autorizado](img/59-filezilla-usuario-no-autorizado.png)
 
 `530 Login incorrect`. Solo entran los usuarios locales con su contraseña.
+
+## 11. Prueba desde cero
+
+El enunciado pide comprobar que, borrando todo y clonando el repositorio, `vagrant up` lo monta todo solo.
+
+Antes actualicé el apartado "Cómo ejecutar el proyecto" del [README principal](../README.md): hay que crear `vault_pass.txt` con la contraseña del vault antes de hacer `vagrant up`, porque ese fichero está en el `.gitignore` y no viene al clonar. En Windows lo creo con `Set-Content`, porque si lo hago con `echo ... >`, PowerShell lo guarda en UTF-16 y Ansible no podría leer la contraseña.
+
+Con `git status` comprobé que todo estaba subido, y borré las máquinas:
+
+```bash
+vagrant destroy -f
+```
+
+![Máquinas borradas](img/60-destroy.png)
+
+Aparté la carpeta del proyecto (la renombré, para borrarla al final si todo funcionaba) y cloné el repositorio:
+
+```bash
+git clone https://github.com/B-V-C/ftp-vagrant-ansible.git
+```
+
+![Repositorio clonado](img/61-clone.png)
+
+Seguí mi propio README: creé `vault_pass.txt` y lancé `vagrant up`. Creó las tres máquinas, el script instaló Ansible y lanzó los tres playbooks sin que tuviera que hacer nada más:
+
+![vagrant up: DNS y web](img/62-vagrant-up-dns-web.png)
+
+![vagrant up: FTP](img/63-vagrant-up-ftp.png)
+
+Los tres terminan con `failed=0`. Ahora casi todo sale `changed` porque las máquinas eran nuevas. En la salida también se ve que Vagrant sustituye la clave "insegura" que trae la imagen por una nueva para cada máquina (`Vagrant insecure key detected`), y por eso el script copia las claves después de crear `dns` y `negocio`. También avisa de que las _guest additions_ de la imagen son más antiguas que mi VirtualBox, pero la carpeta compartida `/vagrant` funciona.
+
+Por último pasé las pruebas:
+
+```bash
+vagrant ssh dns -c "bash /vagrant/dns/test-dns.sh"
+```
+
+```bash
+vagrant ssh ansible -c "bash /vagrant/web/test-web.sh"
+```
+
+![Pruebas finales](img/64-pruebas-finales.png)
+
+Todas en `[OK]`.
+
+## 12. Conclusiones
+
+En esta práctica he montado tres máquinas con Vagrant y las he configurado con Ansible desde un nodo de control: un DNS con BIND9 para `borja.test`, un servidor web con Apache y un FTP seguro con vsftpd en el que `ana` puede publicar páginas y `juan` queda enjaulado en su carpeta. Todo se monta con un solo `vagrant up`.
+
+Lo que más me ha servido entender:
+
+- **Ansible frente a un script**: los playbooks describen cómo tiene que quedar la máquina y no repiten lo que ya está hecho. Se ve en las provisiones con `changed=0`. También he visto que dos playbooks pueden pelearse por el mismo fichero (los permisos del `index.html`) y que eso rompe esa idea.
+- **Ansible Vault**: las contraseñas se suben cifradas y la clave del vault no se sube. Para que `vagrant up` funcione solo, el script la copia de `vault_pass.txt`.
+- **vsftpd**: el modo independiente, solo IPv4, sin anónimos, el enjaulado con la lista de excepciones, la configuración por usuario para la carpeta de `ana` y TLS con un certificado autofirmado creado con `community.crypto`.
+- **`ansible-lint`**: los tres playbooks pasan con el perfil `production`. En el del FTP cambié el `ignore_errors` por una comprobación con `stat`.
+
+Los problemas que más tiempo me llevaron no fueron de la configuración, sino del entorno: la fecha de las máquinas al restaurarlas desde `saved`, VirtualBox atascado, el DNS de Windows preguntando por la tarjeta equivocada y, sobre todo, la falta de memoria. Con la memoria por defecto, `apt` y las actualizaciones del núcleo se quedaban sin RAM y el sistema mataba los procesos; con 2 GB por máquina se resolvió.
+
+Al terminar dejé la red de mi ordenador como estaba: quité el DNS de la tarjeta de VirtualBox y le devolví la métrica automática, porque con las máquinas apagadas hacía que las webs tardaran en cargar.
+
+Cada cambio está en un commit, y las 40 issues del tablero están cerradas.
