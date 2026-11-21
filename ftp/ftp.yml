@@ -105,6 +105,16 @@
         mode: "0644"
       notify: Reiniciar vsftpd
 
+    - name: Copiar la configuración propia de cada usuario (raíz FTP de ana)
+      ansible.builtin.copy:
+        src: files/vsftpd_user_conf/
+        dest: /etc/vsftpd_user_conf/
+        owner: root
+        group: root
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Reiniciar vsftpd
+
     - name: Copiar configuración de vsftpd
       ansible.builtin.copy:
         src: files/vsftpd.conf

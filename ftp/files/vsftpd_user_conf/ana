@@ -1,0 +1,2 @@
+# Al conectarse por FTP, ana empieza directamente en la carpeta de la web
+local_root=/var/www/html
