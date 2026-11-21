@@ -2,7 +2,7 @@
 
 Autor: Borja Valdearenas Cano
 
-Repositorio: <https://github.com/B-V-C/ftp-vagrant-ansible>`
+Repositorio: <https://github.com/B-V-C/ftp-vagrant-ansible>
 
 ## 1. Introducción
 
