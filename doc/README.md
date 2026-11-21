@@ -120,6 +120,8 @@ Vagrant.configure("2") do |config|
 end
 ```
 
+Más adelante le añadí la memoria de las máquinas, primero 1 GB y luego 2 GB, por los problemas que cuento en los apartados 5.6 y 9.5.
+
 La máquina `ansible` va la última porque Vagrant crea las máquinas en orden, y su script copia las claves de `dns` y `negocio`. Si se creara antes, esas claves todavía no existirían.
 
 La primera vez que hice `vagrant up` me salió esto:
