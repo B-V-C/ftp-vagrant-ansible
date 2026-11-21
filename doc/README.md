@@ -796,3 +796,232 @@ vagrant ssh ansible -c "ls -l .vault_pass.txt; ansible-vault view ftp/vars/vault
 ![Vault leído con el fichero de contraseña](img/30-vault-pass.png)
 
 El fichero es de `vagrant`, tiene permisos `-rw-------` y ocupa 3 bytes (`daw`). Con `--vault-password-file` el vault se descifra sin escribir la contraseña.
+
+### 9.2. Playbook `ftp/ftp.yml`
+
+Es el del enunciado actualizado. El único hueco era el dominio: `domain_name: "borja.test"`. Hace esto:
+
+- Instala `vsftpd` y `python3-cryptography`, que es lo que necesita `community.crypto` en `negocio` para crear el certificado.
+- Crea los grupos `ftpusers` y `webpublish`, y los usuarios `juan` y `ana` con el hash de su contraseña sacado del vault (`ftp_password_hashes[item]`). Los dos están en `ftpusers` y solo `ana` en `webpublish`.
+- Deja `/var/www/html` con dueño `root`, grupo `webpublish` y permisos `2775`. El `2` es el bit _setgid_: lo que se cree dentro hereda el grupo `webpublish`.
+- Da permisos `0664` y grupo `webpublish` al `index.html`, para que `ana` lo pueda sobrescribir.
+- Genera el certificado en tres pasos: la clave privada, el CSR (con `ftp.borja.test` y `www.borja.test` como nombres alternativos) y el certificado autofirmado para un año. Van en `/etc/ssl/ftp/`. En el texto del enunciado pone `/etc/ssl/equipo/vsftpd.crt`, pero las rutas que valen son las del playbook, que es quien los crea.
+- Copia `vsftpd.chroot_list` y `vsftpd.conf`, y reinicia vsftpd con un _handler_ si cambian.
+
+Commit: `FTP: añadido el playbook ftp.yml con los usuarios, los grupos y el certificado`.
+
+### 9.3. `vsftpd.chroot_list` y `vsftpd.conf`
+
+`ftp/files/vsftpd.chroot_list` solo tiene una línea: `ana`. Es la lista de usuarios que **no** se enjaulan.
+
+En `vsftpd.conf` rellené los huecos del enunciado:
+
+| Hueco                      | Lo que puse                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| Modo independiente IPv4    | `listen=YES` y `listen_ipv6=NO`                                                                  |
+| Acceso con cuentas locales | `anonymous_enable=NO`, `local_enable=YES` y `write_enable=YES`                                   |
+| Enjaular excepto a ana     | `chroot_local_user=YES`, `chroot_list_enable=YES` y `chroot_list_file=/etc/vsftpd.chroot_list`   |
+| Certificados               | `rsa_cert_file=/etc/ssl/ftp/borja.test.crt` y `rsa_private_key_file=/etc/ssl/ftp/borja.test.key` |
+
+Con `chroot_local_user=YES` se enjaula a todos los usuarios locales en su carpeta personal, y con `chroot_list_enable=YES` los de la lista son la excepción. Así `juan` queda enjaulado y `ana` no.
+
+El enunciado pide buscar qué significa `allow_writeable_chroot=YES`. Por seguridad, vsftpd no deja enjaular a un usuario en una carpeta en la que pueda escribir, y da el error `refusing to run with writable root inside chroot()`. Con `YES` lo permite. Hace falta porque la carpeta de `juan` es suya y puede escribir en ella.
+
+Añadí también algunas opciones que no eran huecos:
+
+- `pam_service_name=vsftpd` y `secure_chroot_dir=/var/run/vsftpd/empty`. Este fichero sustituye entero al de Debian, y esas dos opciones venían en el original; sin ellas, vsftpd usa otros valores que en Debian no funcionan.
+- `ssl_sslv2=NO` y `ssl_sslv3=NO`, porque el comentario del enunciado dice "sin SSL obsoleto".
+
+Al crear `vsftpd.conf` escribí la ruta `ftp/files/vsftpd.conf` con la carpeta `files` seleccionada, y VS Code lo creó en `ftp/files/ftp/files/vsftpd.conf`. Lo moví con `Move-Item` y borré las carpetas que sobraban con `Remove-Item ftp/files/ftp -Recurse`. Al moverlo se perdió lo que había pegado sin guardar y lo tuve que volver a pegar.
+
+Commits: uno para `vsftpd.chroot_list` y otro para `vsftpd.conf`.
+
+### 9.4. La carpeta de `ana` en `/var/www/html`
+
+El enunciado pide que la raíz FTP de `ana` sea `/var/www/html`. Como no está enjaulada, `ana` podía ir a esa carpeta, pero al conectarse empezaba en `/home/ana`. vsftpd permite configurar cada usuario por separado: en `vsftpd.conf` añadí `user_config_dir=/etc/vsftpd_user_conf`, y en esa carpeta va un fichero con el nombre de cada usuario. El de `ana` (`ftp/files/vsftpd_user_conf/ana`) tiene:
+
+```text
+local_root=/var/www/html
+```
+
+En el playbook añadí una tarea que copia esa carpeta:
+
+```yaml
+- name: Copiar la configuración propia de cada usuario (raíz FTP de ana)
+  ansible.builtin.copy:
+    src: files/vsftpd_user_conf/
+    dest: /etc/vsftpd_user_conf/
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  notify: Reiniciar vsftpd
+```
+
+La barra al final de `src` hace que se copie lo que hay dentro de la carpeta y no la carpeta entera.
+
+Commit: `FTP: la raíz FTP de ana es /var/www/html con una configuración propia por usuario`.
+
+### 9.5. Ejecución y problemas de memoria
+
+Descomenté en `ansible.sh` la última línea, la del playbook del FTP con `--vault-password-file ./.vault_pass.txt`, y lancé `vagrant provision ansible`. Falló en el `apt-get install` del script:
+
+![dpkg interrumpido](img/40-error-dpkg.png)
+
+`dpkg` se había quedado a medias el día que apagué las máquinas a la fuerza. Lo arreglé con `sudo dpkg --configure -a` en las tres máquinas, pero en `ansible` faltaba terminar una actualización del núcleo de Linux, y al generar su fichero de arranque el proceso salió `Killed`:
+
+![update-initramfs muerto](img/41-error-initramfs.png)
+
+Otra vez por falta de memoria: con 1 GB no le llegaba. Le di 2 GB a `ansible` y `dpkg --configure -a` terminó bien:
+
+![Actualización del núcleo terminada](img/42-dpkg-configure-ok.png)
+
+Más tarde le pasó lo mismo a `negocio`: se colgó al hacer `vagrant ssh` y también tenía el núcleo a medias. Como mi ordenador tiene 32 GB, puse 2 GB para las tres máquinas en el bloque general del `Vagrantfile` y quité el bloque que había puesto solo para `ansible`.
+
+Con esto el playbook del FTP funcionó:
+
+![Playbook del FTP](img/43-playbook-ftp.png)
+
+`ok=17 changed=15 failed=0`. Sale el aviso `Collection community.crypto does not support Ansible version 2.14.18`: `ansible-galaxy` instala la última versión de la colección, pensada para versiones de Ansible más nuevas que la de Debian. Funciona igual: el certificado se crea.
+
+### 9.6. `ansible-lint` del playbook FTP
+
+Al pasar `ansible-lint ftp/ftp.yml` salió `Attempting to decrypt but no vault secrets found`: `ansible-lint` hace por dentro un `--syntax-check` y no tenía la contraseña del vault. No tiene opción para dársela, pero se puede con una variable de entorno:
+
+```bash
+ANSIBLE_VAULT_PASSWORD_FILE=.vault_pass.txt ansible-lint ftp/ftp.yml
+```
+
+Así ya analizó el playbook y encontró un fallo:
+
+![ansible-lint: ignore-errors](img/44-lint-ignore-errors.png)
+
+La tarea que da permisos al `index.html` tenía `ignore_errors: true`, por si el fichero todavía no existe. `ansible-lint` lo considera mala práctica, porque ignora cualquier error, también los que no esperas, y el playbook se quedaba en el perfil `safety` con 3 de 5 estrellas. Lo cambié por una comprobación previa:
+
+```yaml
+- name: Comprobar si existe la página de prueba
+  ansible.builtin.stat:
+    path: /var/www/html/index.html
+  register: pagina_prueba
+
+- name: Asignar permisos al archivo de prueba para el grupo webpublish
+  ansible.builtin.file:
+    path: /var/www/html/index.html
+    owner: root
+    group: webpublish
+    mode: "0664"
+    state: file
+  when: pagina_prueba.stat.exists
+```
+
+`stat` mira el fichero sin cambiar nada y la tarea siguiente solo se ejecuta si existe.
+
+![ansible-lint sin fallos](img/46-lint-ftp-ok.png)
+
+Ahora pasa con el perfil `production`, igual que el DNS y la web.
+
+Commit: `FTP: comprobar si existe index.html en vez de ignore_errors, para pasar ansible-lint (Closes #30)`.
+
+### 9.7. Los playbooks de la web y del FTP se contradicen
+
+Al volver a provisionar, sin cambiar nada, salía esto:
+
+![Cambios en cada provisión](img/45-conflicto-permisos.png)
+
+`Publicar la página de prueba` (web) deja el `index.html` como `root:root 0644`, y `Asignar permisos al archivo de prueba` (FTP) lo deja como `root:webpublish 0664`. En cada provisión uno lo cambia y el otro lo vuelve a cambiar, así que siempre salen `changed` y Apache se reinicia sin necesidad. Además, si `ana` sube una página y después se provisiona, el playbook de la web la sobrescribe con la del repositorio. Por eso hice las pruebas con FileZilla sin volver a provisionar.
+
+También sale siempre `changed` en `Generar Solicitud de Firma de Certificado (CSR)`: `openssl_csr_pipe` genera el CSR en memoria cada vez. El certificado sale `ok` y no se vuelve a crear.
+
+### 9.8. Comprobaciones en `negocio`
+
+```bash
+vagrant ssh negocio -c "systemctl status vsftpd --no-pager"
+```
+
+![vsftpd funcionando](img/47-vsftpd-status.png)
+
+Está `enabled` y `active (running)`, y el proceso es `/usr/sbin/vsftpd /etc/vsftpd.conf`: funciona por sí mismo, en modo independiente.
+
+```bash
+vagrant ssh negocio -c "sudo ss -tlnp | grep ':21 '; dpkg -l | grep -i inetd || echo 'inetd no está instalado'"
+```
+
+![Solo IPv4 y sin inetd](img/48-ipv4-sin-inetd.png)
+
+Escucha en `0.0.0.0:21`, que es solo IPv4 (no hay ninguna línea con `[::]:21`), y `inetd` no está instalado.
+
+```bash
+vagrant ssh negocio -c "id juan; id ana; ls -ld /var/www/html; ls -l /var/www/html/index.html"
+```
+
+![Usuarios, grupos y permisos](img/49-usuarios-permisos.png)
+
+`juan` está en `ftpusers` y `ana` en `ftpusers` y `webpublish`. `/var/www/html` es `drwxrwsr-x` con grupo `webpublish` (la `s` es el _setgid_) y el `index.html` es `-rw-rw-r--`.
+
+```bash
+vagrant ssh negocio -c "sudo openssl x509 -in /etc/ssl/ftp/borja.test.crt -noout -subject -issuer -dates -ext subjectAltName"
+```
+
+![Certificado](img/50-certificado.png)
+
+`subject` e `issuer` son iguales, así que es autofirmado. Vale un año y sus nombres son `borja.test`, `ftp.borja.test` y `www.borja.test`.
+
+## 10. Pruebas con FileZilla
+
+Al descargar FileZilla, Windows bloqueó el instalador porque era la versión _sponsored_, que trae software publicitario. Descargué la versión sin publicidad desde la lista completa de descargas (`download.php?show_all=1`).
+
+### 10.1. Conexión de `ana`
+
+En el **Gestor de sitios** creé un sitio con el servidor `ftp.borja.test`, por nombre y no por IP, cifrado **Requiere FTP explícito sobre TLS**, usuario `ana` y contraseña `ana`:
+
+![Sitio de ana](img/51-filezilla-sitio-ana.png)
+
+Al conectar sale el aviso del certificado. Sale porque es autofirmado y FileZilla no puede comprobar quién lo ha firmado. Se ven el nombre `borja.test`, los nombres alternativos y las fechas:
+
+![Certificado en FileZilla](img/52-filezilla-certificado.png)
+
+Después de aceptarlo:
+
+![ana conectada en /var/www/html](img/53-filezilla-ana.png)
+
+Resuelve `ftp.borja.test` a `192.168.57.7` con mi DNS, establece la conexión TLS y `ana` empieza directamente en `/var/www/html`, gracias a su `local_root`. El mensaje `El servidor no permite caracteres no ASCII` quiere decir que vsftpd no admite tildes ni eñes en los nombres de los ficheros.
+
+### 10.2. Subida de una página
+
+Creé un `index.html` nuevo en una carpeta fuera del repositorio. La primera vez se quedó como `index.html.txt` y vacío, porque el Explorador ocultaba la extensión. Lo subí arrastrándolo a `/var/www/html` y sobrescribiendo el que había:
+
+![Subida por FTP](img/54-filezilla-subida.png)
+
+`Transferencia correcta, transferidos 283 bytes`. Justo después sale `Se ha recibido una alerta TLS del servidor: Decode error (50)`: es al cerrar la conexión de la transferencia, cuando el fichero ya ha llegado entero. Es un problema conocido de vsftpd con TLS y FileZilla al cortar la sesión, y no afecta a la subida.
+
+En el navegador, después de recargar con **Ctrl + F5** para que no use la caché:
+
+![Página subida por ana](img/55-navegador-pagina-ana.png)
+
+Apache sirve la página que ha subido `ana`.
+
+### 10.3. `juan` enjaulado
+
+Dupliqué el sitio cambiando el usuario por `juan`:
+
+![juan en /](img/56-filezilla-juan-enjaulado.png)
+
+`juan` ve su carpeta como `/`. En realidad es `/home/juan`, pero como está enjaulado vsftpd le hace creer que es la raíz. Si intenta ir a `/var/www/html`:
+
+![juan no puede salir](img/57-filezilla-juan-no-sale.png)
+
+`550 Failed to change directory`: dentro de su jaula esa carpeta no existe.
+
+### 10.4. Accesos rechazados
+
+Con el modo de acceso **Anónimo**:
+
+![Anónimo rechazado](img/58-filezilla-anonimo-rechazado.png)
+
+Lo rechaza con `530`, por `anonymous_enable=NO`.
+
+Con un usuario que no existe (`pepe`):
+
+![Usuario no autorizado](img/59-filezilla-usuario-no-autorizado.png)
+
+`530 Login incorrect`. Solo entran los usuarios locales con su contraseña.
