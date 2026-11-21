@@ -19,6 +19,10 @@ Vagrant.configure("2") do |config|
   config.vm.define "ansible" do |ansible|
     ansible.vm.hostname = "ansible.borja.test"
     ansible.vm.network "private_network", ip: "192.168.57.6"
+    # El nodo de control necesita más memoria: Ansible y las actualizaciones del núcleo se quedaban sin RAM
+    ansible.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+    end
     ansible.vm.provision "shell", path: "script/ansible.sh"
   end
 end
