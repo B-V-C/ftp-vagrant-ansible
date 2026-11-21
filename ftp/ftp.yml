@@ -54,6 +54,11 @@
         group: webpublish
         mode: "2775"
 
+    - name: Comprobar si existe la página de prueba
+      ansible.builtin.stat:
+        path: /var/www/html/index.html
+      register: pagina_prueba
+
     - name: Asignar permisos al archivo de prueba para el grupo webpublish
       ansible.builtin.file:
         path: /var/www/html/index.html
@@ -61,7 +66,7 @@
         group: webpublish
         mode: "0664"
         state: file
-      ignore_errors: true
+      when: pagina_prueba.stat.exists
 
     - name: Crear directorio para los certificados
       ansible.builtin.file:
