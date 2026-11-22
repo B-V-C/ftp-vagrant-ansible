@@ -6,57 +6,57 @@ Repositorio: <https://github.com/B-V-C/ftp-vagrant-ansible>
 
 ## 1. Introducción
 
-En esta práctica monto tres máquinas virtuales con Debian 12 (Bookworm) usando Vagrant y VirtualBox, y las configuro con Ansible en vez de hacerlo a mano en cada una.
+El objetivo de esta práctica es montar tres máquinas virtuales con Debian 12 (Bookworm) usando Vagrant y VirtualBox y, en lugar de configurarlas a mano una por una, hacerlo todo con Ansible.
 
-Las máquinas están en la red privada `192.168.57.0/24`:
+Las tres máquinas comparten la red privada `192.168.57.0/24`:
 
-- `dns.borja.test` (`192.168.57.5`): servidor DNS con BIND9. Resuelve los nombres del dominio `borja.test`.
-- `ansible.borja.test` (`192.168.57.6`): nodo de control. Desde aquí lanzo los playbooks que configuran las otras dos máquinas.
-- `negocio.borja.test` (`192.168.57.7`): servidor web con Apache y servidor FTP con vsftpd. Los nombres `www.borja.test` y `ftp.borja.test` son alias que apuntan a esta máquina.
+- `dns.borja.test` (`192.168.57.5`): es el servidor DNS, con BIND9, y se encarga de resolver los nombres del dominio `borja.test`.
+- `ansible.borja.test` (`192.168.57.6`): es el nodo de control. Desde aquí se lanzan los playbooks que configuran las otras dos máquinas.
+- `negocio.borja.test` (`192.168.57.7`): hace de servidor web con Apache y de servidor FTP con vsftpd. Los nombres `www.borja.test` y `ftp.borja.test` son alias que apuntan a ella.
 
-El FTP es seguro: las conexiones van cifradas con TLS usando un certificado autofirmado, no se permite el acceso anónimo y solo pueden entrar los usuarios locales `juan` y `ana`. `juan` se queda encerrado en su carpeta personal y `ana` puede subir páginas web a `/var/www/html`, que luego sirve Apache.
+En cuanto al FTP, la idea es que sea seguro. Las conexiones van cifradas con TLS mediante un certificado autofirmado, el acceso anónimo está desactivado y solo pueden entrar los usuarios locales `juan` y `ana`. `juan` queda encerrado en su carpeta personal, mientras que `ana` puede subir páginas a `/var/www/html` para que Apache las sirva.
 
-Las tareas las organizo con issues y un tablero en GitHub Projects.
+Para organizar el trabajo he usado issues y un tablero de GitHub Projects.
 
 ## 2. Herramientas
 
-- **Vagrant**: crea y configura las máquinas virtuales.
-- **VirtualBox**: ejecuta las máquinas virtuales.
-- **Debian 12**: sistema operativo de las tres máquinas.
-- **Ansible**: instala y configura los servicios en las máquinas con playbooks.
-- **Ansible Vault**: guarda cifrados los hashes de las contraseñas de los usuarios FTP.
-- **BIND9**: el programa que hace de servidor DNS.
+- **Vagrant**: para crear y configurar las máquinas virtuales.
+- **VirtualBox**: el programa que ejecuta esas máquinas.
+- **Debian 12**: el sistema operativo de las tres.
+- **Ansible**: instala y configura los servicios a través de playbooks.
+- **Ansible Vault**: lo uso para guardar cifrados los hashes de las contraseñas de los usuarios FTP.
+- **BIND9**: el software del servidor DNS.
 - **Apache**: el servidor web.
 - **vsftpd**: el servidor FTP.
-- **FileZilla**: cliente FTP para hacer las pruebas.
-- **Git y GitHub**: guardan los cambios y el historial. Con las issues y GitHub Projects organizo las tareas.
+- **FileZilla**: el cliente FTP con el que he hecho las pruebas.
+- **Git y GitHub**: para el control de versiones y el historial de cambios. Con las issues y GitHub Projects llevo además el seguimiento de las tareas.
 
 ## 3. Cómo ejecutar el proyecto
 
-Para poner en marcha el proyecto hay que tener Vagrant y VirtualBox instalados. Cada máquina usa 2 GB de RAM, así que hacen falta unos 6 GB libres.
+Para poner en marcha el proyecto hace falta tener instalados Vagrant y VirtualBox. Hay que tener en cuenta que cada máquina usa 2 GB de RAM, por lo que se necesitan unos 6 GB libres.
 
-Primero se clona el repositorio y se entra en la carpeta del proyecto:
+Lo primero es clonar el repositorio y entrar en la carpeta:
 
 ```bash
 git clone https://github.com/B-V-C/ftp-vagrant-ansible.git
 cd ftp-vagrant-ansible
 ```
 
-Las contraseñas de los usuarios FTP están cifradas con Ansible Vault en `ftp/vars/vault.yml`. La contraseña del vault no está en el repositorio, así que antes de arrancar hay que crear en la raíz del proyecto un fichero `vault_pass.txt` que contenga solo esa contraseña. En PowerShell se puede crear así, cambiando `CONTRASEÑA` por la del vault:
+Las contraseñas de los usuarios FTP están cifradas con Ansible Vault en `ftp/vars/vault.yml`. Como la contraseña del vault no se sube al repositorio, antes de arrancar hay que crear en la raíz del proyecto un fichero `vault_pass.txt` que contenga únicamente esa contraseña. En PowerShell se puede hacer así (sustituyendo `CONTRASEÑA` por la del vault):
 
 ```bash
 Set-Content -Path vault_pass.txt -Value "CONTRASEÑA" -NoNewline
 ```
 
-Después se ejecuta:
+Una vez creado, basta con ejecutar:
 
 ```bash
 vagrant up
 ```
 
-Vagrant crea las tres máquinas. En la máquina `ansible` ejecuta el script `script/ansible.sh`, que instala Ansible, copia los ficheros y lanza los tres playbooks: DNS, web y FTP. Al terminar, todo queda instalado y funcionando sin hacer nada más.
+Vagrant crea las tres máquinas y, en la de `ansible`, ejecuta el script `script/ansible.sh`. Este script instala Ansible, copia los ficheros necesarios y lanza los tres playbooks (DNS, web y FTP). Cuando termina, todo queda instalado y funcionando sin tener que hacer nada más.
 
-Para comprobarlo:
+Para comprobar que todo funciona se pueden lanzar los scripts de prueba:
 
 ```bash
 vagrant ssh dns -c "bash /vagrant/dns/test-dns.sh"
@@ -66,34 +66,36 @@ vagrant ssh dns -c "bash /vagrant/dns/test-dns.sh"
 vagrant ssh ansible -c "bash /vagrant/web/test-web.sh"
 ```
 
-Para usar los nombres `www.borja.test` y `ftp.borja.test` desde el ordenador, hay que poner `192.168.57.5` como servidor DNS. En [la documentación](doc/README.md) está explicado cómo lo hice en Windows.
+Si se quieren usar los nombres `www.borja.test` y `ftp.borja.test` desde el propio ordenador, hay que configurar `192.168.57.5` como servidor DNS. En [la documentación](doc/README.md) explico cómo lo hice yo en Windows.
 
-Para volver a lanzar el script y los playbooks:
+Otros comandos útiles:
+
+- **Volver a lanzar el script y los playbooks:**
 
 ```bash
 vagrant provision ansible
 ```
 
-Para ver el estado de las máquinas:
+- **Ver el estado de las máquinas:**
 
 ```bash
 vagrant status
 ```
 
-Para detenerlas:
+- **Detenerlas:**
 
 ```bash
 vagrant halt
 ```
 
-Para eliminarlas:
+- **Eliminarlas:**
 
 ```bash
 vagrant destroy -f
 ```
 
-La documentación de todo el proceso, con las capturas y los problemas que me encontré, está en [doc/README.md](doc/README.md).
+Todo el proceso, con capturas y los problemas que me fui encontrando, está documentado en [doc/README.md](doc/README.md).
 
 ## 4. Licencia
 
-Este proyecto está bajo la licencia GNU General Public License v3.0. La elegí porque es la misma que usa Ansible y porque obliga a que las versiones modificadas sigan siendo libres.
+El proyecto está bajo la licencia GNU General Public License v3.0. La elegí porque es la misma que usa Ansible y porque obliga a que cualquier versión modificada siga siendo libre.
